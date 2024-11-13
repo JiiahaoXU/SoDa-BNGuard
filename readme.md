@@ -17,13 +17,12 @@ python src/federated.py --aggr bnguard --attack soda --data cifar10 --ood_data m
 
 Here,
 
-```
-'aggr' is the defense method applied = {'avg', 'mkrum', 'flame', 'geomed', 'fg', 'deepsight', 'mm', 'rlr', 'bnguard'}
+| Argument        | Value       | Description                                                               |
+|-----------------|------------|---------------------------------------------------------------------------|
+| `aggr`         | {'avg', 'mkrum', 'flame', 'rfa', 'foolsgold', 'deepsight', 'mmetric', 'rlr', 'bnguard'}   | Defense method applied by the server epochs |
+| `data`    | {'cifar10', 'cifar100'}        | ID data          |
+| `ood_data`         | {'mnist', 'fmnist', 'svhn'} | OOD data      |
 
-'data' is the ID data = {'cifar10', 'cifar100'}
-
-'ood_data' is the OOD data = {'mnist', 'fmnist', 'svhn'}
-```
 
 ## Acknowledgment
 Our code is constructed on https://github.com/git-disl/Lockdown, a big thanks to their contribution!
