@@ -11,6 +11,7 @@ Our code does not rely on special libraries or tools, so it can be easily integr
 If you want to use the same settings as us, we provide the conda environment we used in `env.yaml` for your convenience.
 
 ### Dataset
+
 All tested datasets are available on `torchvision` and will be downloaded automatically.
 
 ### Example
@@ -18,13 +19,13 @@ All tested datasets are available on `torchvision` and will be downloaded automa
 Generally, to run a case with default settings, you can easily use the following command:
 
 ```
-python src/federated.py --aggr bnguard --attack soda --data cifar10 --ood_data mnist
+python federated.py --aggr bnguard --attack soda --data cifar10 --ood_data mnist
 ```
 
 If you want to run a case with non-IID settings, you can easily use the following command:
 
 ```
-python src/federated.py --aggr bnguard --attack soda --data cifar10 --ood_data mnist --non_iid --alpha 0.5
+python federated.py --aggr bnguard --attack soda --data cifar10 --ood_data mnist --non_iid --alpha 0.5
 
 ```
 
