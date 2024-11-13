@@ -41,11 +41,5 @@ Here,
 
 For other arguments, you can check the `federated.py` file where the detailed explanation is presented.
 
-## Acknowledgment
-Our code is constructed on https://github.com/git-disl/Lockdown, a big thanks to their contribution!
 
-Additionally, we would like to thank the work that helped our paper:
-
-1. SignGuard: https://github.com/JianXu95/SignGuard.
-2. BackdoorIndicator: https://github.com/ybdai7/Backdoor-indicator-defense.
 
