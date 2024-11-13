@@ -4,6 +4,11 @@ We provide the code of proposed SoDa and BNGuard.
 
 ## Usage
 
+### Environment
+
+Our code does not rely on special libraries or tools, so it can be easily integrated with most environment settings. 
+If you want to use the same settings as us, we provide the conda environment we used in `env.yaml` for your convenience.
+
 ### Dataset
 All tested datasets are available on `torchvision` and will be downloaded automatically.
 
@@ -26,12 +31,13 @@ Here,
 
 | Argument        | Type       | Description   | Choice |
 |-----------------|------------|---------------|--------|
-| `aggr`         | str   | Defense method applied by the server epoch | avg, mkrum, flame, rfa, foolsgold, deepsight, mmetric, rlr, signguard, bnguard|
-| `data`    |   str     | ID data          | cifar10, cifar100 |
-| `ood_data`         | str | OOD data      | mnist, fmnist, svhn |
+| `aggr`         | str   | Defense method applied by the server | avg, mkrum, flame, rfa, foolsgold, deepsight, mmetric, rlr, signguard, bnguard|
+| `data`    |   str     | ID data for all clients          | cifar10, cifar100 |
+| `ood_data`         | str | OOD data for malicious clients   | mnist, fmnist, svhn |
 | `non_iid`         | store_true | Enable non-IID settings or not      | N/A |
 | `alpha`         | float | Data heterogeneous degree     | from 0.1 to 1.0|
 
+For other arguments, you can check the `federated.py` file where the detailed explanation is presented.
 
 ## Acknowledgment
 Our code is constructed on https://github.com/git-disl/Lockdown, a big thanks to their contribution!
