@@ -4,6 +4,9 @@ This is the official implementation for MobiHoc'25 paper "On the Out-of-Distribu
 
 ## Usage
 
+If you have any issues using this repo, feel free to contact Jiahao @ jiahaox@unr.edu.
+
+
 ### Environment
 
 Our code does not rely on special libraries or tools, so it can be easily integrated with most environment settings. 
