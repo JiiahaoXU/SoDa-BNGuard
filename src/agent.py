@@ -14,14 +14,12 @@ class Agent():
         self.args = args
         self.error = 0
         self.hessian_metrix = []
-        # get datasets, fedemnist is handled differently as it doesn't come with pytorch
-        
         
         self.train_dataset = utils.DatasetSplit(train_dataset, data_idxs)
         self.train_dataset_ood = train_dataset_mnist
 
         # for backdoor attack, agent poisons his local dataset
-        if self.id < args.num_corrupt and self.args.attack != 'non':
+        if self.id < args.num_malicious_clients and self.args.attack != 'non':
             poison_frac = args.poison_frac
             poison_idxs = random.sample(data_idxs, math.floor(poison_frac * len(data_idxs)))
             self.clean_backup_dataset = copy.deepcopy(self.train_dataset)
@@ -43,20 +41,15 @@ class Agent():
         return torch.cat([param.view(-1) for param in model.parameters()])
 
     def local_train(self, global_model, criterion, round=None):
-        # print(len(self.train_dataset))
-        """ Do a local training over the received global model, return the update """
-        # start = time.time()
 
-        ########
-        
-        if self.is_malicious:
+        if self.is_malicious and self.args.attack == 'soda':
             print('Self-reference training')
             temp_model = copy.deepcopy(global_model)
             temp_model.train()
             optimizer = torch.optim.SGD(temp_model.parameters(), lr=self.args.client_lr,
                                         weight_decay=self.args.wd, momentum=self.args.momentum)
 
-            for local_epoch in range(self.args.local_ep if not self.is_malicious else self.args.attacker_local_ep):
+            for local_epoch in range(self.args.local_ep):
                 start = time.time()
                 for i, (inputs, labels) in enumerate(self.clean_train_loader):
                     optimizer.zero_grad()
@@ -77,8 +70,6 @@ class Agent():
             print('Self-reference finished')
 
             fixed_params = self.get_model_parameters(temp_model)
-            # del temp_model
-        ########
 
         initial_global_model_params = parameters_to_vector(
             [global_model.state_dict()[name] for name in global_model.state_dict()]).detach()
@@ -87,7 +78,7 @@ class Agent():
         optimizer = torch.optim.SGD(global_model.parameters(), lr=self.args.client_lr,
                                     weight_decay=self.args.wd, momentum=self.args.momentum)
         
-        for local_epoch in range(self.args.local_ep if not self.is_malicious else self.args.attacker_local_ep):
+        for local_epoch in range(self.args.local_ep):
             start = time.time()
             for i, (inputs, labels) in enumerate(self.train_loader):
                 optimizer.zero_grad()
@@ -97,7 +88,7 @@ class Agent():
 
                 outputs = global_model(inputs)
                 minibatch_loss = criterion(outputs, labels)
-                if self.is_malicious:
+                if self.is_malicious and self.args.attack == 'soda':
                     current_params = self.get_model_parameters(global_model)
                     l2_loss = torch.norm(current_params - fixed_params, p=2)
                     cos_loss = torch.nn.functional.cosine_similarity(current_params, fixed_params, dim=0)

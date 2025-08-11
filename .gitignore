@@ -24,4 +24,8 @@ node_modules
 
 *.pyc
 
-.data
+data
+
+logs
+
+*.sh

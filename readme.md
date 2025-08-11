@@ -1,6 +1,6 @@
 ## On the Out-of-Distribution Backdoor Attack for Federated Learning
 
-We provide the code of proposed SoDa and BNGuard.
+This is the official implementation for MobiHoc'25 paper "On the Out-of-Distribution Backdoor Attack for Federated Learning".
 
 ## Usage
 

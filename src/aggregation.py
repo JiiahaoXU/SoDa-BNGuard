@@ -24,8 +24,8 @@ class Aggregation():
         self.update_last_round = None
         self.memory_dict = dict()
         self.wv_history = []
-        self.csr_history = []
-        self.wsr_history = []
+        self.tpr_history = []
+        self.fpr_history = []
 
         self.og_test_loader = og_test_loader
         self.mal_test_loader = mal_test_loader
@@ -81,18 +81,10 @@ class Aggregation():
     
     def agg_rfa(self, agent_updates_dict):
         local_updates = []
-        benign_id = []
-        malicious_id = []
 
         for _id, update in agent_updates_dict.items():
             local_updates.append(update)
-            if _id < self.args.num_corrupt:
-                malicious_id.append(_id)
-            else:
-                benign_id.append(_id)
-
-        chosen_clients = malicious_id + benign_id
-        num_chosen_clients = len(malicious_id + benign_id)
+            
         n = len(local_updates)
         grads = torch.stack(local_updates, dim=0)
         weights = torch.ones(n).to(self.args.device)  
@@ -122,29 +114,28 @@ class Aggregation():
 
         for _id, update in agent_updates_dict.items():
             local_updates.append(update)
-            if _id < self.args.num_corrupt:
+            if _id < self.args.num_malicious_clients:
                 malicious_id.append(_id)
             else:
                 benign_id.append(_id)
 
         chosen_clients = malicious_id + benign_id
-        temp_grads = torch.stack(local_updates, dim=0)
-        test_model = copy.deepcopy(self.global_model)
-        unlearned_para = []
+        local_model_updates = torch.stack(local_updates, dim=0)
+        temp_model = copy.deepcopy(self.global_model)
         pre_aggregation = self.agg_avg(agent_updates_dict)
-        pre_aggregation_dict = vector_to_model_wo_load(pre_aggregation + flat_global_model, test_model)
+        pre_aggregation_dict = vector_to_model_wo_load(pre_aggregation + flat_global_model, temp_model)
         
         var_mean_list = []
         var_var_list = []
         mean_mean_big_list = []
         mean_var_big_list = []
-        for _id, update in zip(range(len(temp_grads)), temp_grads):
+        for _id, update in zip(range(len(local_model_updates)), local_model_updates):
             local_model_para = (flat_global_model + update).float()
 
-            pre_aggregation_dict = vector_to_model_wo_load(local_model_para, test_model)
-            test_model.load_state_dict(pre_aggregation_dict)
+            pre_aggregation_dict = vector_to_model_wo_load(local_model_para, temp_model)
+            temp_model.load_state_dict(pre_aggregation_dict)
 
-            for name, module in test_model.named_modules():
+            for _, module in temp_model.named_modules():
                 if isinstance(module, (torch.nn.BatchNorm1d, torch.nn.BatchNorm2d)):
                     running_mean = module.running_mean
                     running_var = module.running_var
@@ -172,7 +163,7 @@ class Aggregation():
         for i in range(n_cluster):
             num_class.append(np.sum(labels==i))
         benign_class = np.argmax(num_class)
-        all_set = set([i for i in range(len(temp_grads))])
+        all_set = set([i for i in range(len(local_model_updates))])
         benign_idx1 = all_set.intersection(set([int(i) for i in np.argwhere(labels==benign_class)]))
 
         benign_idx = list(benign_idx1)
@@ -198,14 +189,12 @@ class Aggregation():
         logging.info('FPR:       %.4f'  % FPR)
         logging.info('TPR:       %.4f' % TPR)
 
-        self.csr_history.append(TPR)
-        self.wsr_history.append(FPR)
+        self.tpr_history.append(TPR)
+        self.fpr_history.append(FPR)
             
-
-        # logging.info(benign_idx)
         current_dict = {}
         for idx in benign_idx:
-            current_dict[chosen_clients[idx]] = temp_grads[idx]
+            current_dict[chosen_clients[idx]] = local_model_updates[idx]
 
         self.update_last_round = self.agg_avg(current_dict)
         return self.update_last_round
@@ -233,7 +222,7 @@ class Aggregation():
         norm_list = []
         for _id, update in agent_updates_dict.items():
             # local_updates.append(update)
-            if _id < self.args.num_corrupt:
+            if _id < self.args.num_malicious_clients:
                 malicious_id.append(_id)
             else:
                 benign_id.append(_id)
@@ -243,7 +232,7 @@ class Aggregation():
 
         # Compute list of scores
         __nbworkers = len(agent_updates_dict)
-        krum_scores = _compute_krum_score(agent_updates_dict, self.args.num_corrupt)
+        krum_scores = _compute_krum_score(agent_updates_dict, self.args.num_malicious_clients)
         print(krum_scores)
         score_index = torch.argsort(
             torch.Tensor(krum_scores)
@@ -270,14 +259,12 @@ class Aggregation():
                     wrong += 1
             WSR = wrong / len(malicious_id)
 
-        # logging.info('benign update index:   %s' % str(benign_id))
-        # logging.info('selected update index: %s' % str(benign_idx))
 
         logging.info('FPR:       %.4f'  % WSR)
         logging.info('TPR:       %.4f' % CSR)
 
-        self.csr_history.append(CSR)
-        self.wsr_history.append(WSR)
+        self.tpr_history.append(CSR)
+        self.fpr_history.append(WSR)
 
         return sum(return_gradient)/len(return_gradient)
    
@@ -286,7 +273,6 @@ class Aggregation():
         Taken from https://github.com/thuydung-icthust/FedGrad_Backdoor_Attack/blob/74aef523a7b0d1c6d595d7a5ba966c88f4353206/defense.py
         
         """
-        begin = time.time()
         class NoiseDataset(torch.utils.data.Dataset):
 
             def __init__(self, size, num_samples):
@@ -477,7 +463,7 @@ class Aggregation():
 
         for _id, update in agent_updates_dict.items():
             local_updates.append(update)
-            if _id < self.args.num_corrupt:
+            if _id < self.args.num_malicious_clients:
                 malicious_id.append(_id)
             else:
                 benign_id.append(_id)
@@ -505,20 +491,14 @@ class Aggregation():
         logging.info('FPR:       %.4f'  % WSR)
         logging.info('TPR:       %.4f' % CSR)
 
-        self.csr_history.append(CSR)
-        self.wsr_history.append(WSR)
+        self.tpr_history.append(CSR)
+        self.fpr_history.append(WSR)
 
         current_dict = {}
         for idx in benign_idx:
             current_dict[chosen_clients[idx]] = agent_updates_dict[idx]
 
         self.update_last_round = self.agg_avg(current_dict)
-
-
-        end = time.time()
-
-        logging.info('Time cost:       %.4f' % (end-begin))
-
         # xx
         return self.update_last_round
         # return aggregated_grad
@@ -530,7 +510,7 @@ class Aggregation():
 
         for _id, update in agent_updates_dict.items():
             local_updates.append(update)
-            if _id < self.args.num_corrupt:
+            if _id < self.args.num_malicious_clients:
                 malicious_id.append(_id)
             else:
                 benign_id.append(_id)
@@ -601,8 +581,8 @@ class Aggregation():
         logging.info('FPR:       %.4f'  % WSR)
         logging.info('TPR:       %.4f' % CSR)
 
-        self.csr_history.append(CSR)
-        self.wsr_history.append(WSR)
+        self.tpr_history.append(CSR)
+        self.fpr_history.append(WSR)
 
         for idx in topk_ind:
             current_dict[chosen_clients[idx]] = agent_updates_dict[chosen_clients[idx]]
@@ -698,7 +678,7 @@ class Aggregation():
         malicious_id = []
 
         for _id, update in agent_updates_dict.items():
-            if _id < self.args.num_corrupt:
+            if _id < self.args.num_malicious_clients:
                 malicious_id.append(_id)
             else:
                 benign_id.append(_id)
@@ -725,8 +705,8 @@ class Aggregation():
         logging.info('FPR:       %.4f'  % WSR)
         logging.info('TPR:       %.4f' % CSR)
 
-        self.csr_history.append(CSR)
-        self.wsr_history.append(WSR)
+        self.tpr_history.append(CSR)
+        self.fpr_history.append(WSR)
 
 
         grad_norm = torch.norm(grads, dim=1).reshape((-1, 1))
@@ -781,7 +761,7 @@ class Aggregation():
 
         for _id, update in agent_updates_dict.items():
             local_updates.append(update)
-            if _id < self.args.num_corrupt:
+            if _id < self.args.num_malicious_clients:
                 malicious_id.append(_id)
             else:
                 benign_id.append(_id)
@@ -820,28 +800,7 @@ class Aggregation():
         # logger.info(f'[foolsgold agg] wv: {wv}')
         self.wv_history.append(wv)
 
-        # print(self.wv_history)
-
-        # agg_grads = []
-        # # Iterate through each layer
-        # for i in range(len(client_grads[0])):
-        #     assert len(wv) == len(client_grads), 'len of wv {} is not consistent with len of client_grads {}'.format(
-        #         len(wv), len(client_grads))
-        #     temp = wv[0] * client_grads[0][i]
-        #     # print(temp)
-        #     # Aggregate gradients for a layer
-        #     for c, client_grad in enumerate(client_grads):
-        #         if c == 0:
-        #             continue
-        #         temp += wv[c] * client_grad[i]
-        #     temp = temp / len(client_grads)
-        #     print(temp)
-        #     agg_grads.append(temp)
-
         print(len(client_grads), len(wv))
-
-        # for i in range(len(client_grads)):
-        #     client_grads[i] *= wv[i] 
         
         weighted_updates = [update * wv[i] for update, i in zip(agent_updates_dict.values(), range(len(wv)))]
 
@@ -860,7 +819,7 @@ class Aggregation():
         for _id, update in agent_updates_dict.items():
             local_updates.append(update)
             local_models.append(update + flat_global_model)
-            if _id < self.args.num_corrupt:
+            if _id < self.args.num_malicious_clients:
                 malicious_id.append(_id)
             else:
                 benign_id.append(_id)
@@ -926,43 +885,6 @@ class Aggregation():
             if "running_mean" not in name and "running_var" not in name and "num_batches_tracked" not in name:
                 value.add_(torch.cuda.FloatTensor(value.shape).normal_(mean=0, std=(clip_value * 0.0001)**2))
 
-
-        # weight_accumulator = dict()
-        # for name, data in self.global_model.state_dict().items():
-        #     weight_accumulator[name] = torch.zeros_like(data, dtype=torch.float)
-
-        # for ind in benign_client:
-        #     local_model_named_param = vector_to_model_wo_load(local_models[ind], self.global_model)
-        #     local_model_named_param_clipped = _norm_clip(local_model_named_param, clip_value)
-        # #     new_dict[ind] = parameters_to_vector(local_model_named_param_clipped)
-        #     for name, param in local_model_named_param.items():
-        #         if name in local_model_named_param_clipped.keys():
-        #             weight_accumulator[name].add_(local_model_named_param_clipped[name].float()-self.global_model.state_dict()[name].float())
-        #         else:
-        #             weight_accumulator[name].add_(param.float() - self.global_model.state_dict()[name].float())
-
-        # # print(flat_global_model.shape)
-        # # for k, v in new_dict.items():
-        # #     print(v.shape)
-
-        # # xx
-        # eta = 0.5
-        # noise_sigma = 0.001
-        # noise_weight = clip_value * noise_sigma
-        # noise_weight = noise_weight ** 2
-        
-        # temp_global_model = deepcopy(self.global_model)
-        # for name, data in temp_global_model.state_dict().items():
-        #     update_per_layer = (weight_accumulator[name]) * \
-        #                 (eta / num_clients)
-            
-        #     if "running_mean" not in name and "running_var" not in name and "num_batches_tracked" not in name:
-        #         noised_layer = torch.cuda.FloatTensor(data.shape).normal_(mean=0, std=noise_weight)
-        #         update_per_layer.add_(noised_layer)
-
-        #     data = data.float()
-        #     data.add_(update_per_layer)
-
         benign_idx = list(benign_client)
         correct = 0
         for idx in benign_idx:
@@ -986,8 +908,8 @@ class Aggregation():
         logging.info('FPR:       %.4f'  % WSR)
         logging.info('TPR:       %.4f' % CSR)
 
-        self.csr_history.append(CSR)
-        self.wsr_history.append(WSR)
+        self.tpr_history.append(CSR)
+        self.fpr_history.append(WSR)
 
         aggregated_global_model_update = parameters_to_vector(
             [benign_aggregated_clipped_dict_param[name] for name in benign_aggregated_clipped_dict_param.keys()])

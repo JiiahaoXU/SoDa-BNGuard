@@ -7,6 +7,9 @@ from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 from collections import defaultdict
 
+import time, os
+from shutil import copyfile
+
 
 class DatasetSplit(Dataset):
     """ An abstract Dataset class wrapped around Pytorch Dataset class """
@@ -19,12 +22,6 @@ class DatasetSplit(Dataset):
         self.args = args
         self.client_id = client_id
         self.modify_label = modify_label
-        if client_id == -1:
-            poison_frac = 1
-        elif client_id < self.args.num_corrupt:
-            poison_frac = self.args.poison_frac
-        else:
-            poison_frac = 0
         self.poison_sample = {}
         self.poison_idxs = []
 
@@ -35,16 +32,7 @@ class DatasetSplit(Dataset):
         return len(self.idxs)
 
     def __getitem__(self, item):
-        # print(target.type())
-        # if self.client_id < self.args.num_corrupt:
-        # if self.idxs[item] in self.poison_idxs:
-        #     inp = self.poison_sample[self.idxs[item]]
-        #     if self.modify_label:
-        #         target = self.args.target_class
-        #     else:
-        #         target = self.dataset[self.idxs[item]][1]
-        # else:
-            
+        
         inp, target = self.dataset[self.idxs[item]]
 
         return inp, target
@@ -63,7 +51,7 @@ def distribute_data_dirichlet(dataset, args):
     N = len(labels_sorted[1])
     K = len(labels_dict)
     logging.info((N, K))
-    client_num = args.num_agents
+    client_num = args.num_clients
 
     min_size = 0
     while min_size < 10:
@@ -88,7 +76,7 @@ def distribute_data_dirichlet(dataset, args):
 
     # distribute data to users
     dict_users = defaultdict(list)
-    for user_idx in range(args.num_agents):
+    for user_idx in range(args.num_clients):
         dict_users[user_idx] = idx_batch[user_idx]
         np.random.shuffle(dict_users[user_idx])
 
@@ -96,12 +84,6 @@ def distribute_data_dirichlet(dataset, args):
     for k in range(K):
         for i in dict_users:
             num[i][k] = len(np.intersect1d(dict_users[i], labels_dict[k]))
-    # logging.info(num)
-    # print(dict_users)
-    # def intersection(lst1, lst2):
-    #     lst3 = [value for value in lst1 if value in lst2]
-    #     return lst3
-    # client_label_num = [len(intersection (dict_users[i], dict_users[i+1] )) for i in range(args.num_agents)]
 
     for each_client, id_ in zip(num, range(len(num))):
         logging.info('client:%d, distribution: %s' % (id_, each_client))
@@ -109,35 +91,27 @@ def distribute_data_dirichlet(dataset, args):
 
 
 def distribute_data(dataset, args, n_classes=10):
-    # logging.info(dataset.targets)
-    # logging.info(dataset.classes)
+
     class_per_agent = n_classes
 
-    if args.num_agents == 1:
+    if args.num_clients == 1:
         return {0: range(len(dataset))}
 
     def chunker_list(seq, size):
         return [seq[i::size] for i in range(size)]
 
-    # sort labels
     labels_sorted = torch.tensor(dataset.targets).sort()
-    # print(labels_sorted)
-    # create a list of pairs (index, label), i.e., at index we have an instance of  label
     class_by_labels = list(zip(labels_sorted.values.tolist(), labels_sorted.indices.tolist()))
-    # convert list to a dictionary, e.g., at labels_dict[0], we have indexes for class 0
     labels_dict = defaultdict(list)
     for k, v in class_by_labels:
         labels_dict[k].append(v)
 
-    # split indexes to shards
-    shard_size = len(dataset) // (args.num_agents * class_per_agent)
+    shard_size = len(dataset) // (args.num_clients * class_per_agent)
     slice_size = (len(dataset) // n_classes) // shard_size
     for k, v in labels_dict.items():
         labels_dict[k] = chunker_list(v, slice_size)
-    hey = copy.deepcopy(labels_dict)
-    # distribute shards to users
     dict_users = defaultdict(list)
-    for user_idx in range(args.num_agents):
+    for user_idx in range(args.num_clients):
         class_ctr = 0
         for j in range(0, n_classes):
             if class_ctr == class_per_agent:
@@ -147,16 +121,6 @@ def distribute_data(dataset, args, n_classes=10):
                 del labels_dict[j % n_classes][0]
                 class_ctr += 1
         np.random.shuffle(dict_users[user_idx])
-    # num = [ [ 0 for k in range(n_classes) ] for i in range(args.num_agents)]
-    # for k in range(n_classes):
-    #     for i in dict_users:
-    #         num[i][k] = len(np.intersect1d(dict_users[i], hey[k]))
-    # logging.info(num)
-    # logging.info(args.num_agents)
-    # def intersection(lst1, lst2):
-    #     lst3 = [value for value in lst1 if value in lst2]
-    #     return lst3
-    # logging.info( len(intersection (dict_users[0], dict_users[1] )))
 
     return dict_users
 
@@ -165,10 +129,9 @@ def get_ood_dataset(dataset, data_dir, normalize):
 
     if dataset == 'mnist':
         transform = transforms.Compose([
-                    # transforms.ToPILImage(),
-                    transforms.Resize((32, 32)),  # 调整大小为 32x32
-                    transforms.Grayscale(num_output_channels=3),  # 将灰度图转换为 RGB 图像 (3通道)
-                    transforms.ToTensor(),  # 转换为 Tensor
+                    transforms.Resize((32, 32)),  
+                    transforms.Grayscale(num_output_channels=3), 
+                    transforms.ToTensor(), 
                     normalize
                     ,
                 ])
@@ -179,10 +142,9 @@ def get_ood_dataset(dataset, data_dir, normalize):
 
     elif dataset == 'fmnist':
         transform = transforms.Compose([
-                    # transforms.ToPILImage(),
-                    transforms.Resize((32, 32)),  # 调整大小为 32x32
-                    transforms.Grayscale(num_output_channels=3),  # 将灰度图转换为 RGB 图像 (3通道)
-                    transforms.ToTensor(),  # 转换为 Tensor
+                    transforms.Resize((32, 32)),  
+                    transforms.Grayscale(num_output_channels=3),  
+                    transforms.ToTensor(), 
                     normalize,
                 ])
         train_dataset = datasets.FashionMNIST(data_dir, train=True, download=True)
@@ -192,8 +154,8 @@ def get_ood_dataset(dataset, data_dir, normalize):
 
     elif dataset == 'svhn':
         transform = transforms.Compose([
-                    transforms.Resize((32, 32)),  # Resize to 32x32 (SVHN is already RGB and 32x32)
-                    transforms.ToTensor(),  # Convert to Tensor
+                    transforms.Resize((32, 32)), 
+                    transforms.ToTensor(), 
                     normalize,
                 ])
         train_dataset = datasets.SVHN(data_dir, split='train', download=True, transform=transform)
@@ -255,12 +217,10 @@ def get_datasets(data, args):
 def get_loss_n_accuracy(model, criterion, data_loader, args, round, num_classes=10, poison_flag=False):
     """ Returns the loss and total accuracy, per class accuracy on the supplied data loader """
 
-    # disable BN stats during inference
     model.eval()
     total_loss, correctly_labeled_samples = 0, 0
     confusion_matrix = torch.zeros(num_classes, num_classes)
     not_correct_samples = []
-    # forward-pass to get loss and predictions of the current batch
     all_labels = []
 
     for _, (inputs, labels) in enumerate(data_loader):
@@ -269,28 +229,17 @@ def get_loss_n_accuracy(model, criterion, data_loader, args, round, num_classes=
         
         if poison_flag:
             labels.fill_(args.target_class)
-        # compute the total loss over minibatch
-        # print(inputs.shape)
+
         outputs = model(inputs)
         avg_minibatch_loss = criterion(outputs, labels)
 
         total_loss += avg_minibatch_loss.item() * outputs.shape[0]
 
-        # get num of correctly predicted inputs in the current batch
-        if args.data == 'sen140':
-            # print(outputs.shape)
-            # print(outputs)
-            pred_labels = outputs.squeeze() > 0.5
-            # _, pred_labels = torch.max(outputs, 1)
-            # print(pred_labels)
-        else:
-            _, pred_labels = torch.max(outputs, 1)
+        _, pred_labels = torch.max(outputs, 1)
         pred_labels = pred_labels.view(-1)
         all_labels.append(labels.cpu().view(-1))
-        # correct_inputs = labels[torch.nonzero(torch.eq(pred_labels, labels) == 0).squeeze()]
-        # not_correct_samples.append(  wrong_inputs )
+
         correctly_labeled_samples += torch.sum(torch.eq(pred_labels, labels)).item()
-        # fill confusion_matrix
         for t, p in zip(labels.view(-1), pred_labels.view(-1)):
             confusion_matrix[t.long(), p.long()] += 1
 
@@ -323,29 +272,21 @@ def poison_dataset(dataset, args, poison_idxs=None, poison_all=False, agent_idx=
     return poison_idxs  
 
 def vector_to_model(vec, model):
-    # Pointer for slicing the vector for each parameter
     state_dict = model.state_dict()
     pointer = 0
     for name in state_dict:
-        # The length of the parameter
         num_param = state_dict[name].numel()
-        # Slice the vector, reshape it, and replace the old data of the parameter
         state_dict[name].data = vec[pointer:pointer + num_param].view_as(state_dict[name]).data
-        # Increment the pointer
         pointer += num_param
     model.load_state_dict(state_dict)
     return state_dict
 
 def vector_to_model_wo_load(vec, model):
-    # Pointer for slicing the vector for each parameter
     state_dict = model.state_dict()
     pointer = 0
     for name in state_dict:
-        # The length of the parameter
         num_param = state_dict[name].numel()
-        # Slice the vector, reshape it, and replace the old data of the parameter
         state_dict[name].data = vec[pointer:pointer + num_param].view_as(state_dict[name]).data
-        # Increment the pointer
         pointer += num_param
 
     return state_dict
@@ -353,12 +294,50 @@ def vector_to_model_wo_load(vec, model):
 def vector_to_name_param(vec, name_param_map):
     pointer = 0
     for name in name_param_map:
-        # The length of the parameter
         num_param = name_param_map[name].numel()
-        # Slice the vector, reshape it, and replace the old data of the parameter
         name_param_map[name].data = vec[pointer:pointer + num_param].view_as(name_param_map[name]).data
-        # Increment the pointer
         pointer += num_param
 
     return name_param_map
 
+
+def setup_logging(args):
+    logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+    rootLogger = logging.getLogger()
+    rootLogger.setLevel(logging.DEBUG)
+    logPath = "logs"
+    time_str = time.strftime("%Y-%m-%d-%H-%M")
+
+    if args.non_iid:
+        iid_str = 'noniid(%.1f)' % args.alpha
+    else:
+        iid_str = 'iid'
+
+    args.exp_name = iid_str + '_pr(%.1f)' % args.poison_frac
+    
+    if args.exp_name_extra != '':
+        args.exp_name += '_%s' % args.exp_name_extra
+
+    fileName = "%s_%s" % (time_str, args.exp_name)
+
+    dir_path = '%s/%s/attack_%s(%s)_ar_%.2f/defense_%s/%s/' % (logPath, args.data, args.attack, args.ood_data, args.num_malicious_clients / args.num_clients, args.aggr, fileName)
+    file_path = dir_path + 'backup_file/'
+
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+
+    if not os.path.exists(file_path):
+        os.makedirs(file_path)
+
+    backup_file = ['aggregation.py', 'federated.py', 'agent.py']
+
+    for file in backup_file:
+        copyfile('src/%s' % file, file_path + file)
+
+    fileHandler = logging.FileHandler("{0}/{1}.log".format(dir_path, fileName))
+    fileHandler.setFormatter(logFormatter)
+    rootLogger.addHandler(fileHandler)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.DEBUG)  # 设置日志级别
+    console_handler.setFormatter(logFormatter)
+    rootLogger.addHandler(console_handler)
