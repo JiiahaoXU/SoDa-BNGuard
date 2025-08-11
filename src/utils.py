@@ -338,6 +338,6 @@ def setup_logging(args):
     fileHandler.setFormatter(logFormatter)
     rootLogger.addHandler(fileHandler)
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.DEBUG)  # 设置日志级别
+    console_handler.setLevel(logging.DEBUG) 
     console_handler.setFormatter(logFormatter)
     rootLogger.addHandler(console_handler)
